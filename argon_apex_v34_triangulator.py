@@ -1,10 +1,11 @@
 """
-ARGON-APEX v34: Triangulated Tennis Spacetime Engine
+ARGON-APEX v34: Triangulated Tennis Spacetime Engine (Live Interactive & Auto)
 SofaScore Telemetry + Pinnacle Arcadia Sharp Benchmark + Altenar (TriunfoBet) Exploiter
 Author: Luis Alfredo (tororex250) + Argon / Spark Quantitative Core
 """
 
 import math
+import sys
 from typing import Dict, Tuple, List, Optional
 
 # =====================================================================
@@ -94,7 +95,6 @@ def calculate_set_and_match(p_a: float, p_b: float) -> Tuple[float, float, float
     play_set(0, 0, 1, 0.5)
     
     p_set_a = sum(prob for score, prob in exact_scores.items() if int(score.split("-")[0]) > int(score.split("-")[1]))
-    # Mejor de 3 sets
     p_match_a = (p_set_a ** 2) + (2.0 * (p_set_a ** 2) * (1.0 - p_set_a))
     avg_games_set = sum((int(s.split("-")[0]) + int(s.split("-")[1])) * pr for s, pr in exact_scores.items())
     return p_set_a, p_match_a, avg_games_set
@@ -111,16 +111,8 @@ def triangulate_market_edge(
     tier: str = "CHALLENGER",
     bankroll: float = 100.0
 ) -> Dict:
-    """
-    Triangula la probabilidad real ponderando la telemetría de SofaScore
-    y el precio sin margen de Pinnacle. Compara contra las cuotas de Altenar
-    (TriunfoBet) para emitir alertas de +EV y tamaño de Stake con Kelly (0.25).
-    """
     p_pin_fair, _, vig = devig_two_way(pinnacle_odds[0], pinnacle_odds[1])
     
-    # Ponderación dinámica:
-    # En Challenger/ITF: SofaScore (60%) manda sobre Pinnacle (40%) por micro-telemetría y fatiga.
-    # En ATP/Grand Slam: Pinnacle (65%) manda sobre SofaScore (35%) por liquidez profunda.
     if tier.upper() in ["CHALLENGER", "ITF"]:
         w_markov, w_pin = 0.60, 0.40
     else:
@@ -135,7 +127,7 @@ def triangulate_market_edge(
     if ev > 0.0:
         full_kelly = (p_true * altenar_odds - 1.0) / (altenar_odds - 1.0)
         frac_kelly = 0.25 * full_kelly
-        stake_pct = min(frac_kelly, 0.035)  # Tope de gestión: 3.5% máximo
+        stake_pct = min(frac_kelly, 0.035)  # Máximo 3.5% del bank
         stake_amount = round(bankroll * stake_pct, 2)
         signal = "SNIPER BUY" if ev >= 0.08 else "VALUE BUY"
     else:
@@ -157,25 +149,68 @@ def triangulate_market_edge(
     }
 
 # =====================================================================
-# 4. RUNNER DE EXPLOTACIÓN
+# 4. MODO INTERACTIVO EN VIVO PARA TERMUX
 # =====================================================================
 
+def interactive_mode():
+    print("\n" + "="*66)
+    print("  ARGON-APEX v34: ANÁLISIS CUANTITATIVO EN VIVO (TERMUX)")
+    print("="*66)
+    try:
+        player_a = input("[?] Nombre Jugador A (ej: Alcaraz): ").strip() or "Jugador A"
+        player_b = input("[?] Nombre Jugador B (ej: Sinner): ").strip() or "Jugador B"
+        t_choice = input("[?] Torneo: 1=Challenger/ITF, 2=ATP/WTA [Defecto 1]: ").strip()
+        tier = "ATP" if t_choice == "2" else "CHALLENGER"
+        
+        print("\n[+] Telemetría SofaScore (% Puntos ganados al saque en esta pista):")
+        p_a = float(input(f"    - % Saque {player_a} (ej: 66): ")) / 100.0
+        p_b = float(input(f"    - % Saque {player_b} (ej: 59): ")) / 100.0
+        
+        print("\n[+] Cuotas de Cierre Pinnacle (Sharp Benchmark):")
+        pin_a = float(input(f"    - Cuota Pinnacle {player_a}: "))
+        pin_b = float(input(f"    - Cuota Pinnacle {player_b}: "))
+        
+        print("\n[+] Cuotas de la Casa Soft (TriunfoBet / Altenar):")
+        soft_a = float(input(f"    - Cuota TriunfoBet {player_a} (Partido): "))
+        soft_set1_str = input(f"    - Cuota TriunfoBet {player_a} (Set 1) [Opcional / Enter]: ").strip()
+        
+        b_str = input("\n[?] Tu Bankroll en USD [Defecto 100]: ").strip()
+        bankroll = float(b_str) if b_str else 100.0
+        
+    except (ValueError, KeyboardInterrupt):
+        print("\n[!] Operación cancelada.")
+        return
+
+    p_set1_m, p_match_m, avg_g = calculate_set_and_match(p_a, p_b)
+    
+    print("\n" + "="*66)
+    print(f"  RESULTADO DEL SCOUTING: {player_a} vs {player_b} ({tier})")
+    print("="*66)
+    
+    res = triangulate_market_edge(f"Ganador Partido ({player_a})", p_match_m, (pin_a, pin_b), soft_a, tier, bankroll)
+    print(f"[+] MERCADO: {res['market']} | Señal: [{res['signal']}]")
+    print(f"    Pinnacle Fair: {res['p_pin_fair']}% | SofaScore Markov: {res['p_markov']}% ➔ Triangulada: {res['p_true_triangulated']}%")
+    print(f"    Cuota TriunfoBet: {res['altenar_odds']} (Implica: {res['p_altenar_implied']}%)")
+    print(f"    VENTAJA (+EV): {res['ev_pct']}% | Edge: {res['edge_pct']}%")
+    if res['stake'] > 0:
+        print(f"    STAKE RECOMENDADO (0.25 Kelly): ${res['stake']} ({res['stake']/bankroll*100:.1f}% de tu bank)")
+    else:
+        print(f"    RECOMENDACIÓN: NO ENTRAR. Sin valor matemático.")
+        
+    if soft_set1_str:
+        soft_set1 = float(soft_set1_str)
+        res_s1 = triangulate_market_edge(f"Ganador Set 1 ({player_a})", p_set1_m, (pin_a * 1.04, pin_b * 0.96), soft_set1, tier, bankroll)
+        print(f"\n[+] MERCADO: {res_s1['market']} | Señal: [{res_s1['signal']}]")
+        print(f"    Probabilidad Real: {res_s1['p_true_triangulated']}% vs Cuota TriunfoBet: {res_s1['altenar_odds']}")
+        print(f"    VENTAJA (+EV): {res_s1['ev_pct']}% | Stake: ${res_s1['stake']}")
+    print("="*66 + "\n")
+
+
 if __name__ == "__main__":
-    print("==================================================================")
-    print("  ARGON-APEX v34: TRIANGULACIÓN SOFASCORE + PINNACLE -> ALTENAR  ")
-    print("==================================================================")
-    
-    p_a = 0.66
-    p_b = 0.59
-    p_set1_markov, p_match_markov, avg_games = calculate_set_and_match(p_a, p_b)
-    
-    res_match = triangulate_market_edge("Ganador Partido (A)", p_match_markov, (1.54, 2.65), 1.63, "CHALLENGER", 100.0)
-    res_set1 = triangulate_market_edge("Ganador Set 1 (A)", p_set1_markov, (1.60, 2.45), 1.72, "CHALLENGER", 100.0)
-    res_over = triangulate_market_edge("Over 21.5 Games", 0.575, (1.82, 2.08), 1.96, "CHALLENGER", 100.0)
-    
-    for r in [res_match, res_set1, res_over]:
-        print(f"\n[+] {r['market']} | Señal: {r['signal']}")
-        print(f"    Pinnacle Fair: {r['p_pin_fair']}% | SofaScore Markov: {r['p_markov']}% ➔ Triangulada: {r['p_true_triangulated']}%")
-        print(f"    Altenar (TriunfoBet): {r['altenar_odds']} (Implica: {r['p_altenar_implied']}%)")
-        print(f"    VENTAJA (+EV): {r['ev_pct']}% | Edge: {r['edge_pct']}% | Stake Sugerido: ${r['stake']}")
-    print("==================================================================")
+    if len(sys.argv) > 1 and sys.argv[1] == "--demo":
+        p_a, p_b = 0.66, 0.59
+        p_s1, p_m, _ = calculate_set_and_match(p_a, p_b)
+        r = triangulate_market_edge("Ganador Partido (A)", p_m, (1.54, 2.65), 1.63, "CHALLENGER", 100.0)
+        print(f"[DEMO] {r['market']} | {r['signal']} | EV: {r['ev_pct']}% | Stake: ${r['stake']}")
+    else:
+        interactive_mode()
