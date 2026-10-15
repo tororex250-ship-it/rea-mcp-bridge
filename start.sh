@@ -23,6 +23,24 @@ if [ ! -f ./cloudflared ]; then
 fi
 
 echo "=========================================================="
-echo "  Generando enlace directo Cloudflare (sin bloqueo)      "
+echo "  Generando enlace directo Cloudflare (HTTP2)            "
 echo "=========================================================="
-./cloudflared tunnel --url http://localhost:$PORT
+
+./cloudflared tunnel --protocol http2 --url http://localhost:$PORT > tunnel.log 2>&1 &
+
+echo "Esperando que Cloudflare asigne la URL..."
+for i in {1..30}; do
+    if grep -q "trycloudflare.com" tunnel.log 2>/dev/null; then
+        URL=$(grep -o 'https://[-a-zA-Z0-9@:%._\+~#=]*\.trycloudflare\.com' tunnel.log | head -n 1)
+        echo ""
+        echo "=========================================================="
+        echo "  COPIA Y PEGA ESTE ENLACE EN GEMINI:                     "
+        echo "  ${URL}/sse"
+        echo "=========================================================="
+        echo "${URL}/sse" > URL_DE_GEMINI.txt
+        break
+    fi
+    sleep 1
+done
+
+tail -f tunnel.log
