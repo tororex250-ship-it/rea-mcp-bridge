@@ -5,8 +5,10 @@
   "portsAttributes": {
     "8000": {
       "label": "REA MCP Server",
+      "visibility": "public",
       "onAutoForward": "notify"
     }
   },
-  "postCreateCommand": "npm install -g rea-agents@latest supergateway"
+  "postCreateCommand": "npm install -g rea-agents@latest supergateway",
+  "postStartCommand": "bash start.sh"
 }
